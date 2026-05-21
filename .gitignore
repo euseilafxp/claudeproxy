@@ -1,0 +1,6 @@
+node_modules/
+dist/
+claude_profile/
+.env
+*.log
+.X11-unix/

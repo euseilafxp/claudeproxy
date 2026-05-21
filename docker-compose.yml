@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  claudeproxy:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - BROWSER=chromium
+      - ANTHROPIC_EMAIL=${ANTHROPIC_EMAIL:-}
+      - ANTHROPIC_PASSWORD=${ANTHROPIC_PASSWORD:-}
+      - API_KEY=${API_KEY:-}
+    volumes:
+      - ./claude_profile:/app/claude_profile
+    shm_size: '2gb'
+    restart: unless-stopped

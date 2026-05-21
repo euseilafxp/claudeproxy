@@ -1,0 +1,26 @@
+{
+  "name": "claudeproxy",
+  "version": "1.0.0",
+  "description": "Proxy API OpenAI-compatible para Claude via scraping",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "build": "tsc",
+    "login": "tsx src/login.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.8",
+    "dotenv": "^16.4.7",
+    "hono": "^4.7.4",
+    "playwright": "^1.52.0",
+    "playwright-extra": "^4.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.4",
+    "typescript": "^5.7.3"
+  }
+}
