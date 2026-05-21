@@ -4,10 +4,6 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
-    x11vnc \
-    fluxbox \
-    novnc \
-    websockify \
     dbus-x11 \
     xauth \
     fonts-liberation \
@@ -24,14 +20,10 @@ COPY . .
 RUN mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 ENV DISPLAY=:99
-ENV VNC_PORT=5900
-ENV NOVNC_PORT=6080
 
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
-EXPOSE 3000 6080
-
-VOLUME ["/app/claude_profile"]
+EXPOSE 3000
 
 CMD ["/app/start.sh"]

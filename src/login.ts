@@ -1,42 +1,40 @@
 import * as dotenv from 'dotenv';
-import { initPlaywright, loginToClaude, BrowserType } from './services/playwright.js';
+import { initPlaywright, closePlaywright, getCookies } from './services/playwright.js';
+import * as fs from 'fs';
 
 dotenv.config();
 
-const browserArg = process.argv.find(arg => arg.startsWith('--browser='));
-let browserType: BrowserType = 'chromium';
-if (browserArg) {
-  browserType = browserArg.split('=')[1] as BrowserType;
-} else if (process.env.BROWSER) {
-  browserType = process.env.BROWSER as BrowserType;
-}
-
 async function main() {
-  console.log('🚀 ClaudeProxy Login Tool');
-  console.log(`Browser: ${browserType}\n`);
+  console.log('ClaudeProxy Login Tool');
+  console.log('A browser will open - log in to claude.ai manually.');
+  console.log('After login, press Enter here to save the session.\n');
 
-  await initPlaywright(false, browserType);
+  await initPlaywright(false, 'chrome');
 
-  const email = process.env.ANTHROPIC_EMAIL;
-  const password = process.env.ANTHROPIC_PASSWORD;
+  console.log('\nWaiting for login...');
+  console.log('Press ENTER after you are logged in to claude.ai...');
 
-  if (!email || !password) {
-    console.log('⚠️  No credentials in .env');
-    console.log('Please enter credentials when browser opens...\n');
-  } else {
-    console.log(`📧 Logging in as: ${email}`);
-    const success = await loginToClaude(email, password);
-    if (success) {
-      console.log('\n✅ Login successful!');
-      console.log('Session saved to claudeproxy/ directory');
-    } else {
-      console.log('\n❌ Login failed');
-    }
-  }
+  await new Promise<void>(resolve => {
+    process.stdin.once('data', () => resolve());
+  });
 
-  console.log('\nPress Ctrl+C to exit');
-  
-  process.stdin.resume();
+  const cookies = await getCookies();
+  const page = (await import('./services/playwright.js')).activePage;
+  const allCookies = page ? await page.context().cookies() : [];
+
+  const sessionData = {
+    cookies: allCookies,
+    cookieString: cookies,
+    savedAt: new Date().toISOString()
+  };
+
+  fs.writeFileSync('session.json', JSON.stringify(sessionData, null, 2));
+  console.log('\nSession saved to session.json!');
+  console.log(`Cookie string length: ${cookies.length}`);
+  console.log('This file will be used by the server on Render.');
+
+  await closePlaywright();
+  process.exit(0);
 }
 
 main().catch(console.error);

@@ -9,11 +9,7 @@ services:
         value: 3000
       - key: BROWSER
         value: chromium
-      - key: ANTHROPIC_EMAIL
-        sync: false
-      - key: ANTHROPIC_PASSWORD
-        sync: false
-    disk:
-      name: claude-profile
-      mountPath: /app/claude_profile
-      sizeGB: 1
+      - key: SERVER_ONLY
+        value: "1"
+      - key: RUNNING_IN_DOCKER
+        value: "1"

@@ -1,5 +1,6 @@
 import { chromium as playwrightChromium, firefox, webkit, BrowserContext, Page } from 'playwright';
 import path from 'path';
+import fs from 'fs';
 
 export type BrowserType = 'chromium' | 'firefox' | 'webkit' | 'chrome' | 'edge';
 
@@ -8,6 +9,22 @@ export let activePage: Page | null = null;
 let cachedClaudeHeaders: { headers: Record<string, string>, sessionId: string } | null = null;
 let lastHeadersTime = 0;
 const HEADERS_TTL = 10 * 60 * 1000;
+let sessionFromFile: { cookies: any[], cookieString: string } | null = null;
+
+const SESSION_FILE = path.resolve('session.json');
+
+function loadSessionFromFile(): { cookies: any[], cookieString: string } | null {
+  try {
+    if (fs.existsSync(SESSION_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8'));
+      console.log('[Playwright] Loaded session from session.json');
+      return data;
+    }
+  } catch (err: any) {
+    console.warn('[Playwright] Failed to load session.json:', err.message);
+  }
+  return null;
+}
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -93,7 +110,16 @@ async function launchStealthBrowser(headless: boolean, browserType: BrowserType)
       '--no-first-run',
       '--no-zygote',
       '--disable-gpu',
-      '--window-size=1280,720'
+      '--disable-software-rasterizer',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-sync',
+      '--disable-translate',
+      '--metrics-recording-only',
+      '--no-default-browser-check',
+      '--disable-infobars',
+      '--window-size=1280,720',
+      '--js-flags=--max-old-space-size=256'
     ]
   };
 
@@ -132,9 +158,39 @@ export async function initPlaywright(headless = false, browserType: BrowserType 
     return;
   }
 
+  sessionFromFile = loadSessionFromFile();
+
+  const serverOnlyMode = process.env.SERVER_ONLY === '1' || (sessionFromFile && process.env.DISPLAY);
+
+  if (serverOnlyMode && sessionFromFile) {
+    console.log('[Playwright] Running in server-only mode (using saved session cookies)');
+    cachedClaudeHeaders = {
+      headers: {
+        'cookie': sessionFromFile.cookieString,
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'anthropic-version': '2023-06-01',
+        'anthropic-sentiment-account-id': '',
+        'x-anthropic-account': ''
+      },
+      sessionId: ''
+    };
+    lastHeadersTime = Date.now();
+    console.log('[Playwright] Session cookies loaded. Proxy ready.');
+    return;
+  }
+
   console.log(`[Playwright] Launching ${browserType} (headless=${headless})...`);
 
   context = await launchStealthBrowser(headless, browserType);
+
+  if (sessionFromFile && sessionFromFile.cookies.length > 0) {
+    try {
+      await context.addCookies(sessionFromFile.cookies);
+      console.log('[Playwright] Injected cookies from session.json');
+    } catch (err: any) {
+      console.warn('[Playwright] Failed to inject cookies:', err.message);
+    }
+  }
 
   activePage = context.pages()[0] || await context.newPage();
 
@@ -142,7 +198,7 @@ export async function initPlaywright(headless = false, browserType: BrowserType 
 
   if (!hasValidSession) {
     console.warn('[Playwright] No valid session found. Manual login required.');
-    console.warn('[Playwright] If running on server, connect via VNC to login.');
+    console.warn('[Playwright] Run: node node_modules/tsx/dist/cli.mjs src/login.ts');
   }
 }
 
@@ -219,8 +275,54 @@ async function _getClaudeHeadersInternal(forceNew = false): Promise<{ headers: R
     return cachedClaudeHeaders;
   }
 
+  if (sessionFromFile && !activePage) {
+    console.log('[Playwright] Server-only mode: refreshing cookies by launching browser...');
+    try {
+      context = await launchStealthBrowser(true, 'chromium');
+      if (sessionFromFile.cookies.length > 0) {
+        await context.addCookies(sessionFromFile.cookies);
+      }
+      activePage = context.pages()[0] || await context.newPage();
+      const valid = await checkValidSession();
+      if (valid) {
+        const freshCookies = await getCookies();
+        cachedClaudeHeaders = {
+          headers: {
+            ...cachedClaudeHeaders?.headers,
+            'cookie': freshCookies
+          },
+          sessionId: ''
+        };
+        lastHeadersTime = Date.now();
+
+        const allCookies = await activePage.context().cookies();
+        fs.writeFileSync(SESSION_FILE, JSON.stringify({
+          cookies: allCookies,
+          cookieString: freshCookies,
+          savedAt: new Date().toISOString()
+        }, null, 2));
+
+        console.log('[Playwright] Cookies refreshed and saved.');
+        return cachedClaudeHeaders;
+      }
+    } catch (err: any) {
+      console.error('[Playwright] Failed to refresh cookies:', err.message);
+      if (context) {
+        await context.close();
+        context = null;
+        activePage = null;
+      }
+      if (cachedClaudeHeaders) {
+        console.log('[Playwright] Falling back to saved cookies...');
+        lastHeadersTime = Date.now();
+        return cachedClaudeHeaders;
+      }
+      throw err;
+    }
+  }
+
   if (!activePage) {
-    throw new Error('Playwright not initialized');
+    throw new Error('Playwright not initialized and no saved session');
   }
 
   const currentUrl = activePage.url();
